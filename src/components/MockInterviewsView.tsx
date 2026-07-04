@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Subject, MockInterviewSession, User } from '../types';
-import { Sparkles, MessageSquare, Plus, Award, ChevronRight, CheckCircle, Brain, Play, Trash2, Send, Loader2, ArrowLeft } from 'lucide-react';
+import { Sparkles, MessageSquare, Plus, Award, ChevronRight, CheckCircle, Brain, Play, Trash2, Send, Loader2, ArrowLeft, Volume2, VolumeX, Mic, MicOff } from 'lucide-react';
 
 interface MockInterviewsViewProps {
   subjects: Subject[];
@@ -17,11 +17,146 @@ export default function MockInterviewsView({ subjects, onTriggerNotification, on
   const [isSending, setIsSending] = useState(false);
   const [xpGainedMessage, setXpGainedMessage] = useState<string | null>(null);
   
+  // Voice Assistance state
+  const [isListening, setIsListening] = useState(false);
+  const [speakingMsgId, setSpeakingMsgId] = useState<number | null>(null);
+  const [autoRead, setAutoRead] = useState(true);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const recognitionRef = useRef<any>(null);
+
+  // Stop speaking and listening when switching sessions or unmounting
+  useEffect(() => {
+    return () => {
+      if (typeof window !== 'undefined' && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch (e) {}
+      }
+    };
+  }, [activeSession?.id]);
+
+  // Handle Speech Recognition Toggle
+  const toggleListening = () => {
+    if (typeof window === 'undefined') return;
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      onTriggerNotification('Voice input (Speech Recognition) is not supported in this browser. Please use Chrome or Safari.');
+      return;
+    }
+
+    if (isListening) {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+      setIsListening(false);
+    } else {
+      try {
+        const rec = new SpeechRecognition();
+        rec.continuous = false;
+        rec.interimResults = false;
+        rec.lang = 'en-US';
+
+        rec.onstart = () => {
+          setIsListening(true);
+        };
+
+        rec.onresult = (event: any) => {
+          const resultText = event.results[0][0].transcript;
+          if (resultText) {
+            setUserResponse(prev => prev ? prev + ' ' + resultText : resultText);
+            onTriggerNotification(`Captured: "${resultText}"`);
+          }
+        };
+
+        rec.onerror = (e: any) => {
+          console.error('Speech recognition error:', e);
+          setIsListening(false);
+          onTriggerNotification('Voice input failed or timed out. Please try again or type manually.');
+        };
+
+        rec.onend = () => {
+          setIsListening(false);
+        };
+
+        recognitionRef.current = rec;
+        rec.start();
+      } catch (err) {
+        console.error(err);
+        setIsListening(false);
+      }
+    }
+  };
+
+  // Handle Text To Speech (TTS)
+  const speakText = (text: string, msgIdx: number) => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) {
+      onTriggerNotification('Text-To-Speech is not supported in this browser.');
+      return;
+    }
+
+    // If already speaking this message, stop it
+    if (speakingMsgId === msgIdx) {
+      window.speechSynthesis.cancel();
+      setSpeakingMsgId(null);
+      return;
+    }
+
+    // Cancel any existing playback
+    window.speechSynthesis.cancel();
+
+    // Clean up text of markdown markers if necessary for a cleaner speech
+    const cleanText = text
+      .replace(/###/g, '')
+      .replace(/\*\*/g, '')
+      .replace(/- /g, ', ');
+
+    const utterance = new SpeechSynthesisUtterance(cleanText);
+    
+    // Attempt to select a clear English voice if available
+    const voices = window.speechSynthesis.getVoices();
+    const premiumVoice = voices.find(v => v.lang.startsWith('en') && (v.name.includes('Google') || v.name.includes('Premium') || v.name.includes('Natural')));
+    if (premiumVoice) {
+      utterance.voice = premiumVoice;
+    }
+    
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+
+    utterance.onend = () => {
+      setSpeakingMsgId(null);
+    };
+
+    utterance.onerror = () => {
+      setSpeakingMsgId(null);
+    };
+
+    setSpeakingMsgId(msgIdx);
+    window.speechSynthesis.speak(utterance);
+  };
 
   useEffect(() => {
     fetchSessions();
   }, []);
+
+  // Trigger auto-read of new interviewer messages
+  useEffect(() => {
+    if (!activeSession) return;
+    const lastMsgIdx = activeSession.messages.length - 1;
+    if (lastMsgIdx >= 0) {
+      const lastMsg = activeSession.messages[lastMsgIdx];
+      if (lastMsg.role === 'interviewer' && autoRead) {
+        // Wait slightly for layout to settle, then read out
+        const timer = setTimeout(() => {
+          speakText(lastMsg.content, lastMsgIdx);
+        }, 500);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [activeSession?.messages?.length]);
 
   useEffect(() => {
     if (messagesEndRef.current) {
@@ -321,7 +456,22 @@ export default function MockInterviewsView({ subjects, onTriggerNotification, on
             </div>
 
             <div className="flex items-center gap-3">
-              <span className={`text-[10px] font-black font-mono px-3 py-1 rounded-full border ${
+              <div className="flex items-center gap-2 mr-1">
+                <button
+                  onClick={() => setAutoRead(!autoRead)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-bold font-mono transition-all border ${
+                    autoRead 
+                      ? 'bg-indigo-600/10 text-indigo-400 border-indigo-500/20' 
+                      : 'bg-slate-800/60 text-slate-400 border-white/[0.04]'
+                  }`}
+                  title="Toggle Auto Read AI Messages aloud"
+                >
+                  {autoRead ? <Volume2 className="w-3.5 h-3.5 text-indigo-400" /> : <VolumeX className="w-3.5 h-3.5 text-slate-400" />}
+                  <span>{autoRead ? 'AUTO-VOICE: ON' : 'AUTO-VOICE: OFF'}</span>
+                </button>
+              </div>
+
+              <span className={`text-[10px] font-black font-mono px-3 py-1.5 rounded-full border ${
                 activeSession.status === 'completed'
                   ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25'
                   : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/25 animate-pulse'
@@ -353,9 +503,32 @@ export default function MockInterviewsView({ subjects, onTriggerNotification, on
                     }`}>
                       {msg.content}
                     </div>
-                    <p className={`text-[9px] text-slate-500 px-1 ${isAI ? 'text-left' : 'text-right'}`}>
-                      {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </p>
+                    <div className={`flex items-center gap-2 mt-0.5 text-[9px] text-slate-500 px-1 ${isAI ? 'justify-start' : 'justify-end'}`}>
+                      <span>
+                        {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                      {isAI && (
+                        <button
+                          onClick={() => speakText(msg.content, idx)}
+                          className={`flex items-center gap-1 hover:text-indigo-400 font-mono font-bold transition-colors ${
+                            speakingMsgId === idx ? 'text-indigo-400' : ''
+                          }`}
+                          title={speakingMsgId === idx ? 'Stop playing voice' : 'Listen to response'}
+                        >
+                          {speakingMsgId === idx ? (
+                            <>
+                              <VolumeX className="w-3 h-3 text-rose-400 animate-pulse" />
+                              <span className="text-rose-400">Stop Reading</span>
+                            </>
+                          ) : (
+                            <>
+                              <Volume2 className="w-3 h-3" />
+                              <span>Listen Voice</span>
+                            </>
+                          )}
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               );
@@ -415,25 +588,51 @@ export default function MockInterviewsView({ subjects, onTriggerNotification, on
           {/* Interactive Chat Input or Completed Back-button */}
           {activeSession.status === 'active' ? (
             <div className="p-4 bg-[#111a2e]/80 border-t border-white/[0.06]">
-              <div className="flex items-center gap-3">
-                <input
-                  type="text"
-                  value={userResponse}
-                  onChange={(e) => setUserResponse(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleSendMessage();
-                  }}
-                  disabled={isSending}
-                  placeholder={`Type your reply to the AI Interviewer...`}
-                  className="flex-1 bg-[#0e1726]/60 border border-white/[0.08] text-xs text-slate-200 rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500 transition-all"
-                />
-                <button
-                  onClick={handleSendMessage}
-                  disabled={!userResponse.trim() || isSending}
-                  className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-45 text-white p-3 rounded-xl flex items-center justify-center flex-shrink-0 cursor-pointer transition-all"
-                >
-                  <Send className="w-4 h-4" />
-                </button>
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-3">
+                  <input
+                    type="text"
+                    value={userResponse}
+                    onChange={(e) => setUserResponse(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleSendMessage();
+                    }}
+                    disabled={isSending}
+                    placeholder={isListening ? "Listening... Speak now!" : "Type or speak your reply to the interviewer..."}
+                    className="flex-1 bg-[#0e1726]/60 border border-white/[0.08] text-xs text-slate-200 rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500 transition-all"
+                  />
+                  <button
+                    type="button"
+                    onClick={toggleListening}
+                    disabled={isSending}
+                    className={`p-3 rounded-xl flex items-center justify-center flex-shrink-0 cursor-pointer transition-all border ${
+                      isListening
+                        ? 'bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border-rose-500/30 animate-pulse'
+                        : 'bg-[#0e1726]/60 hover:bg-[#0e1726]/90 text-indigo-400 border-white/[0.08]'
+                    }`}
+                    title={isListening ? 'Listening... Click to Stop' : 'Dictate your answer (Voice Assistance)'}
+                  >
+                    {isListening ? <MicOff className="w-4 h-4 text-rose-400" /> : <Mic className="w-4 h-4" />}
+                  </button>
+                  <button
+                    onClick={handleSendMessage}
+                    disabled={!userResponse.trim() || isSending}
+                    className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-45 text-white p-3 rounded-xl flex items-center justify-center flex-shrink-0 cursor-pointer transition-all"
+                  >
+                    <Send className="w-4 h-4" />
+                  </button>
+                </div>
+                {isListening && (
+                  <p className="text-[10px] text-rose-400 font-bold font-mono animate-pulse px-1">
+                    ● Speech-To-Text Active: Speak clearly. The system will auto-capture your voice input.
+                  </p>
+                )}
+                {!isListening && (
+                  <p className="text-[10px] text-slate-500 px-1 font-mono flex items-center gap-1.5">
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                    <span>Voice Assistance Ready: Click the microphone to dictate, or click 'Listen Voice' on AI cards.</span>
+                  </p>
+                )}
               </div>
             </div>
           ) : (

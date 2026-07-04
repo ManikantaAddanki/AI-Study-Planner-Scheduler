@@ -1,7 +1,7 @@
 {
   "name": "AI Study Planner & Scheduler",
   "description": "An optimized full-stack study planning web application using Gemini AI to generate customized hourly study schedules, manage subjects, track tasks, and study with spaced repetition and weak topic coaching.",
-  "requestFramePermissions": [],
+  "requestFramePermissions": ["microphone"],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
   ]

@@ -1201,7 +1201,7 @@ app.get('/api/solutions', (req, res) => {
 });
 
 app.post('/api/solutions/submit', async (req, res) => {
-  const { problemId, solutionCode, userId, subjectId, subjectName } = req.body;
+  const { problemId, solutionCode, userId, subjectId, subjectName, language } = req.body;
   const uid = userId || 'user-demo';
   
   const challenges = db.getChallenges();
@@ -1210,19 +1210,22 @@ app.post('/api/solutions/submit', async (req, res) => {
     return res.status(404).json({ error: 'Problem challenge not found.' });
   }
   
-  const prompt = `You are an expert compiler and technical interviewer evaluating a student's coding solution in TypeScript/JavaScript.
+  const activeLang = language || 'JavaScript';
+  const prompt = `You are an expert compiler and technical interviewer evaluating a student's coding solution in ${activeLang}.
   
   Problem Title: ${challenge.title}
   Problem Description:
   ${challenge.description}
   
+  Selected Programming Language: ${activeLang}
+  
   Student Code Solution:
-  \`\`\`typescript
+  \`\`\`${activeLang.toLowerCase()}
   ${solutionCode}
   \`\`\`
   
   Please evaluate:
-  1. "status": String, either "solved" (if the code is syntactically correct, has correct logic, matches prompt requirements, handles edge cases, and satisfies constraints) or "failed" (if there are logical bugs, infinite loops, syntax errors, or major omissions).
+  1. "status": String, either "solved" (if the code is syntactically correct for ${activeLang}, has correct logic, matches prompt requirements, handles edge cases, and satisfies constraints) or "failed" (if there are logical bugs, infinite loops, syntax errors, or major omissions in ${activeLang}).
   2. "score": An integer score out of 100 based on code quality, correctness, time complexity, and edge case handling.
   3. "aiReview": Detailed, professional review feedback in beautiful Markdown. Highlight syntax mistakes, logical bugs, time and space complexity (Big O), and suggest code optimization or refactoring steps with neat code snippets.
   

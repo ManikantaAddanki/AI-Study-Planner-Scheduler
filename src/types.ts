@@ -163,15 +163,31 @@ export interface WeeklyAssessment {
 export interface ProblemChallenge {
   id: string;
   title: string;
-  description: string;
+  description: string; // Problem Statement
   difficulty: 'Easy' | 'Medium' | 'Hard';
   estimatedTime: string;
   topic: string;
-  templateCode: string;
+  templateCode: string; // Default or JS/TS template
   subjectId?: string;
   subjectName?: string;
   points?: number;
   acceptanceRate?: string;
+  // New rich fields requested
+  chapter?: string;
+  sampleInput?: string;
+  sampleOutput?: string;
+  constraints?: string;
+  hints?: string[];
+  solution?: string;
+  videoUrl?: string;
+  tags?: string[];
+  examples?: string;
+  expectedOutput?: string;
+  pythonTemplate?: string;
+  javaTemplate?: string;
+  cTemplate?: string;
+  cppTemplate?: string;
+  javascriptTemplate?: string;
 }
 
 export interface UserProblemSolution {
@@ -182,6 +198,7 @@ export interface UserProblemSolution {
   subjectId: string;
   subjectName: string;
   solutionCode: string;
+  language?: string;
   status: 'solved' | 'failed' | 'unsolved';
   aiReview?: string;
   score?: number; // e.g. 85

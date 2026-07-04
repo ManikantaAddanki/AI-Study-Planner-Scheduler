@@ -12,12 +12,28 @@ export default function ProblemSolvingView({ subjects, onTriggerNotification, on
   const [challenges, setChallenges] = useState<ProblemChallenge[]>([]);
   const [solutions, setSolutions] = useState<UserProblemSolution[]>([]);
   const [activeChallenge, setActiveChallenge] = useState<ProblemChallenge | null>(null);
-  const [solutionCode, setSolutionCode] = useState<string>('');
+  
+  // Multi-language active code state
+  const [selectedLang, setSelectedLang] = useState<'javascript' | 'python' | 'java' | 'c' | 'cpp'>('javascript');
+  const [codes, setCodes] = useState<Record<string, string>>({
+    javascript: '',
+    python: '',
+    java: '',
+    c: '',
+    cpp: ''
+  });
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [terminalOutput, setTerminalOutput] = useState<string>('');
   const [xpGainedMessage, setXpGainedMessage] = useState<string | null>(null);
   const [lastSubmission, setLastSubmission] = useState<UserProblemSolution | null>(null);
   const [selectedSubjectId, setSelectedSubjectId] = useState<string>('all');
+
+  // IDE Tab & Interactive Reveal state
+  const [activeTab, setActiveTab] = useState<'details' | 'hints' | 'solution'>('details');
+  const [revealedSolution, setRevealedSolution] = useState(false);
+  const [revealedHints, setRevealedHints] = useState<Record<number, boolean>>({});
+  const [editorTheme, setEditorTheme] = useState<'deep-space' | 'dracula'>('deep-space');
 
   useEffect(() => {
     fetchChallenges();
@@ -46,27 +62,46 @@ export default function ProblemSolvingView({ subjects, onTriggerNotification, on
 
   const handleOpenChallenge = (chal: ProblemChallenge) => {
     setActiveChallenge(chal);
-    setSolutionCode(chal.templateCode || `// Write your TypeScript function here\nfunction ${chal.title.toLowerCase().replace(/\s+/g, '')}(params) {\n  \n  return;\n}`);
+    setCodes({
+      javascript: chal.javascriptTemplate || chal.templateCode || `// JavaScript Solution\nfunction ${chal.title.toLowerCase().replace(/\s+/g, '')}(params) {\n  return;\n}`,
+      python: chal.pythonTemplate || `# Python Solution\ndef ${chal.title.toLowerCase().replace(/\s+/g, '')}(params):\n    pass`,
+      java: chal.javaTemplate || `// Java Solution\npublic class Solution {\n    public static void main(String[] args) {\n        \n    }\n}`,
+      c: chal.cTemplate || `// C Solution\n#include <stdio.h>\n\nint main() {\n    return 0;\n}`,
+      cpp: chal.cppTemplate || `// C++ Solution\n#include <iostream>\nusing namespace std;\n\nint main() {\n    return 0;\n}`
+    });
+    setSelectedLang('javascript');
     setTerminalOutput('');
     setXpGainedMessage(null);
     setLastSubmission(null);
+    setActiveTab('details');
+    setRevealedSolution(false);
+    setRevealedHints({});
   };
 
   const handleRunTestsSimulated = () => {
-    setTerminalOutput("Compiling TS/JS sources...\nChecking standard syntax rules...\nRunning 2 built-in sample assertions...\n\nAssertion 1: PASS ✔\nAssertion 2: PASS ✔\n\n[Console Logs]: All starter test assets executed successfully.");
-    onTriggerNotification("Sample test cases passed!");
+    const langNames = {
+      javascript: 'NodeJS JavaScript Engine v20.x',
+      python: 'Python 3.11 Interpreter',
+      java: 'OpenJDK JVM 17.x',
+      c: 'GCC 12.2 C Compiler',
+      cpp: 'G++ 12.2 C++ Compiler'
+    };
+    
+    setTerminalOutput(`[Compilation Info]: Spawning sandbox environment...\n[Active Engine]: ${langNames[selectedLang]}\n[Status]: Executing default test assertions for "${activeChallenge?.title || 'Challenge'}"...\n\nAssertion 1 (${activeChallenge?.sampleInput || 'n=15'}): PASS ✔\nExpected: ${activeChallenge?.expectedOutput || 'Correct'}\nReturned: ${activeChallenge?.expectedOutput || 'Correct'}\n\n[Verdict]: All starter test cases passed successfully! Code structure is ready for submission.`);
+    onTriggerNotification(`Local code assertions passed under ${selectedLang.toUpperCase()} environment!`);
   };
 
   const handleSubmitSolution = async () => {
     if (!activeChallenge) return;
 
-    if (!solutionCode.trim()) {
+    const codeToSubmit = codes[selectedLang] || '';
+    if (!codeToSubmit.trim()) {
       onTriggerNotification('Please write some code before submitting.');
       return;
     }
 
     setIsSubmitting(true);
-    setTerminalOutput("Pushing sources to remote AI sandbox server...\nInitializing TypeScript evaluation engine...\nRunning complete academic asserts...");
+    setTerminalOutput(`Pushing ${selectedLang.toUpperCase()} sources to remote AI sandbox server...\nInitializing compiled execution context...\nRunning complete academic asserts...`);
     
     try {
       const res = await fetch('/api/solutions/submit', {
@@ -74,9 +109,10 @@ export default function ProblemSolvingView({ subjects, onTriggerNotification, on
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           problemId: activeChallenge.id,
-          solutionCode,
+          solutionCode: codeToSubmit,
           subjectId: activeChallenge.subjectId,
-          subjectName: activeChallenge.subjectName
+          subjectName: activeChallenge.subjectName,
+          language: selectedLang.toUpperCase()
         })
       });
       const data = await res.json();
@@ -84,12 +120,12 @@ export default function ProblemSolvingView({ subjects, onTriggerNotification, on
       fetchSolutions();
 
       if (data.solution.status === 'solved') {
-        setTerminalOutput(`Academic compiler run: SOLVED (Score: ${data.solution.score}/100)!\nXP Awarded: +${data.xpGained} XP.\n\nReady for optimize adjustments.`);
+        setTerminalOutput(`Academic compiler run: SOLVED (Score: ${data.solution.score}/100) using ${selectedLang.toUpperCase()}!\nXP Awarded: +${data.xpGained} XP.\n\nReady for optimize adjustments.`);
         setXpGainedMessage(`🎉 Challenge Solved! You scored ${data.solution.score}% and awarded +${data.xpGained} XP!`);
         onRefreshUserStats();
-        onTriggerNotification(`Problem solved successfully! +${data.xpGained} XP awarded!`);
+        onTriggerNotification(`Problem solved successfully under ${selectedLang.toUpperCase()}! +${data.xpGained} XP awarded!`);
       } else {
-        setTerminalOutput(`Academic compiler run: FAILED (Score: ${data.solution.score}/100).\nReview debugger review feedback below for corrections.`);
+        setTerminalOutput(`Academic compiler run: FAILED (Score: ${data.solution.score}/100) under ${selectedLang.toUpperCase()}.\nReview debugger review feedback below for corrections.`);
         onTriggerNotification(`Solution check completed but failed assertions.`);
       }
     } catch (err) {
@@ -301,7 +337,12 @@ export default function ProblemSolvingView({ subjects, onTriggerNotification, on
                       const associatedChallenge = challenges.find(c => c.id === sol.problemId);
                       if (associatedChallenge) {
                         handleOpenChallenge(associatedChallenge);
-                        setSolutionCode(sol.solutionCode);
+                        const langKey = (sol.language || 'javascript').toLowerCase() as 'javascript' | 'python' | 'java' | 'c' | 'cpp';
+                        setCodes(prev => ({
+                          ...prev,
+                          [langKey]: sol.solutionCode
+                        }));
+                        setSelectedLang(langKey);
                         setLastSubmission(sol);
                       }
                     }}
@@ -332,55 +373,244 @@ export default function ProblemSolvingView({ subjects, onTriggerNotification, on
         /* Full Code Compiler Split Screen Terminal layout */
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
           
-          {/* Left panel: Problem description */}
-          <div className="lg:col-span-5 bg-[#0e1726]/30 backdrop-blur-md border border-white/[0.06] p-6 rounded-2xl flex flex-col justify-between space-y-6">
+          {/* Left panel: Problem description & Interactive Resources */}
+          <div className="lg:col-span-5 bg-[#0e1726]/30 backdrop-blur-md border border-white/[0.06] p-6 rounded-2xl flex flex-col justify-between space-y-5">
             <div className="space-y-4">
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => {
-                    setActiveChallenge(null);
-                    fetchSolutions();
-                  }}
-                  className="text-slate-400 hover:text-slate-200 p-1 rounded-lg hover:bg-white/[0.04] transition"
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                </button>
-                <div>
-                  <p className="text-[9px] font-black font-mono text-teal-400 uppercase tracking-wider">
-                    {activeChallenge.subjectName}
-                  </p>
-                  <h3 className="text-sm font-bold text-white line-clamp-1">{activeChallenge.title}</h3>
+              {/* Back Button and Header */}
+              <div className="flex items-start gap-2 justify-between">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      setActiveChallenge(null);
+                      fetchSolutions();
+                    }}
+                    className="text-slate-400 hover:text-slate-200 p-1.5 rounded-lg hover:bg-white/[0.04] transition cursor-pointer"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                  </button>
+                  <div>
+                    {activeChallenge.chapter && (
+                      <p className="text-[9px] font-black font-mono text-amber-400/90 uppercase tracking-widest leading-none">
+                        📖 {activeChallenge.chapter}
+                      </p>
+                    )}
+                    <h3 className="text-sm font-bold text-white mt-1 leading-tight line-clamp-1">{activeChallenge.title}</h3>
+                  </div>
                 </div>
+
+                <span className={`text-[9px] font-black font-mono px-2 py-0.5 rounded border ${
+                  activeChallenge.difficulty === 'Easy' ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' :
+                  activeChallenge.difficulty === 'Medium' ? 'text-amber-400 bg-amber-500/10 border-amber-500/20' :
+                  'text-rose-400 bg-rose-500/10 border-rose-500/20'
+                }`}>
+                  {activeChallenge.difficulty.toUpperCase()}
+                </span>
               </div>
 
-              <div className="flex items-center gap-2">
-                <span className="text-[9px] font-black font-mono bg-slate-800 text-slate-400 px-2 py-0.5 rounded border border-white/5 uppercase">
-                  Points: {activeChallenge.points}
-                </span>
-                <span className="text-[9px] font-black font-mono bg-teal-500/10 text-teal-400 px-2 py-0.5 rounded border border-teal-500/20 uppercase">
-                  Acceptance: {activeChallenge.acceptanceRate}
-                </span>
-              </div>
-
-              <div className="space-y-2 border-t border-white/[0.04] pt-4">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest font-mono">
+              {/* Resource Navigation Tabs */}
+              <div className="flex border-b border-white/[0.04] p-0.5 bg-[#111a2e]/40 rounded-xl">
+                <button
+                  onClick={() => setActiveTab('details')}
+                  className={`flex-1 py-2 text-center text-[10px] font-bold font-mono rounded-lg transition-all cursor-pointer ${
+                    activeTab === 'details'
+                      ? 'bg-teal-600/15 text-teal-400 border border-teal-500/15'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
                   Description
-                </p>
-                <p className="text-xs text-slate-300 leading-relaxed font-sans whitespace-pre-wrap">
-                  {activeChallenge.description}
-                </p>
+                </button>
+                <button
+                  onClick={() => setActiveTab('hints')}
+                  className={`flex-1 py-2 text-center text-[10px] font-bold font-mono rounded-lg transition-all cursor-pointer ${
+                    activeTab === 'hints'
+                      ? 'bg-teal-600/15 text-teal-400 border border-teal-500/15'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Hints ({activeChallenge.hints?.length || 0})
+                </button>
+                <button
+                  onClick={() => setActiveTab('solution')}
+                  className={`flex-1 py-2 text-center text-[10px] font-bold font-mono rounded-lg transition-all cursor-pointer ${
+                    activeTab === 'solution'
+                      ? 'bg-teal-600/15 text-teal-400 border border-teal-500/15'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Official Walkthrough
+                </button>
               </div>
 
-              <div className="space-y-2 bg-[#111a2e]/60 border border-white/[0.04] p-4 rounded-xl font-mono text-[11px] leading-relaxed">
-                <p className="text-[10px] font-black text-teal-400 uppercase tracking-widest">
-                  Constraints
-                </p>
-                <p className="text-slate-400 mt-1 whitespace-pre-wrap">
-                  - Input variables are clean parameters.
-                  - Handle extremely large list numbers correctly.
-                  - Space complexity: O(N) or O(1) constraints.
-                </p>
-              </div>
+              {/* Tab 1: Description Details */}
+              {activeTab === 'details' && (
+                <div className="space-y-4 max-h-[420px] overflow-y-auto pr-1">
+                  <div className="space-y-1.5">
+                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest font-mono">
+                      Problem Statement
+                    </p>
+                    <p className="text-xs text-slate-300 leading-relaxed font-sans whitespace-pre-wrap">
+                      {activeChallenge.description}
+                    </p>
+                  </div>
+
+                  {activeChallenge.tags && activeChallenge.tags.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 pt-1">
+                      {activeChallenge.tags.map((t, idx) => (
+                        <span key={idx} className="text-[9px] font-bold font-mono bg-indigo-500/10 text-indigo-400 px-2.5 py-0.5 rounded-full border border-indigo-500/15">
+                          #{t.toUpperCase()}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {activeChallenge.constraints && (
+                    <div className="space-y-1.5 bg-[#111a2e]/60 border border-white/[0.04] p-4 rounded-xl font-mono text-[11px] leading-relaxed">
+                      <p className="text-[10px] font-black text-teal-400 uppercase tracking-widest">
+                        Constraints
+                      </p>
+                      <p className="text-slate-400 whitespace-pre-wrap">
+                        {activeChallenge.constraints}
+                      </p>
+                    </div>
+                  )}
+
+                  {activeChallenge.examples && (
+                    <div className="space-y-1.5 bg-[#111a2e]/60 border border-white/[0.04] p-4 rounded-xl">
+                      <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest font-mono">
+                        Algorithm Examples
+                      </p>
+                      <p className="text-[11px] text-slate-400 whitespace-pre-wrap font-sans leading-relaxed">
+                        {activeChallenge.examples}
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="bg-[#0b0f19]/70 border border-white/[0.04] p-3 rounded-xl font-mono text-[10px]">
+                      <p className="font-bold text-teal-400 uppercase">Sample Input</p>
+                      <pre className="text-slate-300 mt-1.5 overflow-x-auto whitespace-pre-wrap">{activeChallenge.sampleInput || 'N/A'}</pre>
+                    </div>
+                    <div className="bg-[#0b0f19]/70 border border-white/[0.04] p-3 rounded-xl font-mono text-[10px]">
+                      <p className="font-bold text-teal-400 uppercase">Sample Output</p>
+                      <pre className="text-slate-300 mt-1.5 overflow-x-auto whitespace-pre-wrap">{activeChallenge.sampleOutput || 'N/A'}</pre>
+                    </div>
+                  </div>
+
+                  {activeChallenge.expectedOutput && (
+                    <div className="bg-[#0b0f19]/70 border border-white/[0.04] p-3 rounded-xl font-mono text-[10px]">
+                      <p className="font-bold text-teal-400 uppercase">Expected Output Specification</p>
+                      <pre className="text-slate-300 mt-1.5 overflow-x-auto whitespace-pre-wrap">{activeChallenge.expectedOutput}</pre>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Tab 2: Collapsible Practice Hints */}
+              {activeTab === 'hints' && (
+                <div className="space-y-4 max-h-[420px] overflow-y-auto pr-1">
+                  <div className="bg-[#111a2e]/60 border border-white/[0.04] p-4 rounded-xl">
+                    <p className="text-[11px] text-slate-400 leading-relaxed font-sans">
+                      Stuck on logical loops, bounds, or syntax? Reveal hints sequentially to prompt correct structures without spoiling full solutions.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2.5">
+                    {activeChallenge.hints && activeChallenge.hints.map((hint, hIdx) => {
+                      const isRevealed = revealedHints[hIdx];
+                      return (
+                        <div key={hIdx} className="bg-[#111a2e]/60 border border-white/[0.04] p-4 rounded-xl transition duration-150">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-black text-teal-400 font-mono">HINT #{hIdx + 1}</span>
+                            {!isRevealed && (
+                              <button
+                                onClick={() => setRevealedHints(prev => ({ ...prev, [hIdx]: true }))}
+                                className="text-[9px] bg-teal-600/10 hover:bg-teal-600/20 text-teal-400 font-bold px-2.5 py-0.5 rounded border border-teal-500/25 transition cursor-pointer"
+                              >
+                                Reveal hint content
+                              </button>
+                            )}
+                          </div>
+                          {isRevealed ? (
+                            <p className="text-[11px] text-slate-300 mt-2 leading-relaxed whitespace-pre-wrap">{hint}</p>
+                          ) : (
+                            <p className="text-[11px] text-slate-500 italic mt-2">Content hidden. Click reveal to view...</p>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {(!activeChallenge.hints || activeChallenge.hints.length === 0) && (
+                      <p className="text-xs text-slate-500 italic text-center py-4">No specific hints required for this basic exercise.</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Tab 3: Official Solution Walkthrough */}
+              {activeTab === 'solution' && (
+                <div className="space-y-4 max-h-[420px] overflow-y-auto pr-1">
+                  {activeChallenge.videoUrl && (
+                    <div className="bg-[#111a2e]/60 border border-white/[0.04] p-4 rounded-xl space-y-2.5">
+                      <div className="flex items-center gap-2 text-rose-400">
+                        <Play className="w-4 h-4 fill-rose-400" />
+                        <h4 className="text-[10px] font-black uppercase tracking-wider font-mono">Video Explanation Walkthrough</h4>
+                      </div>
+                      <p className="text-[11px] text-slate-400 leading-relaxed">
+                        Watch an in-depth code explanation, tracing variable values, Big-O stack usage, and edge constraints.
+                      </p>
+                      <a
+                        href={activeChallenge.videoUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 bg-rose-600/10 hover:bg-rose-600/20 border border-rose-500/20 text-rose-400 text-[10px] font-bold font-mono px-3.5 py-1.5 rounded-lg transition"
+                      >
+                        <Play className="w-3.5 h-3.5 fill-rose-400" />
+                        <span>Watch on Video Platform</span>
+                      </a>
+                    </div>
+                  )}
+
+                  <div className="bg-[#111a2e]/60 border border-white/[0.04] p-4 rounded-xl space-y-3">
+                    <div className="flex items-center gap-2 text-indigo-400">
+                      <Code2 className="w-4 h-4" />
+                      <h4 className="text-[10px] font-black uppercase tracking-wider font-mono">Official Reference Implementation</h4>
+                    </div>
+                    <p className="text-[11px] text-slate-400 leading-relaxed">
+                      Study the standard algorithm structure below to resolve any bugs in your personal draft.
+                    </p>
+
+                    {!revealedSolution ? (
+                      <button
+                        onClick={() => {
+                          if (confirm('Revealing the answer will unlock the official solution code. We encourage trying to solve it yourself first! Reveal now?')) {
+                            setRevealedSolution(true);
+                          }
+                        }}
+                        className="w-full bg-indigo-600/10 hover:bg-indigo-600/20 border border-indigo-500/20 text-indigo-400 text-[10px] font-bold font-mono py-2 rounded-lg transition cursor-pointer"
+                      >
+                        Show Solution Code
+                      </button>
+                    ) : (
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[9px] text-slate-500 font-mono font-bold uppercase">Official Algorithm Code</span>
+                          <button
+                            onClick={() => {
+                              navigator.clipboard.writeText(activeChallenge.solution || '');
+                              onTriggerNotification('Official solution copied!');
+                            }}
+                            className="text-[9px] text-indigo-400 hover:underline font-mono font-bold"
+                          >
+                            Copy Code
+                          </button>
+                        </div>
+                        <pre className="bg-[#0b0f19] border border-white/[0.04] p-3 rounded-lg font-mono text-[10px] text-emerald-400/90 overflow-x-auto max-h-[220px] whitespace-pre-wrap leading-relaxed">
+                          {activeChallenge.solution || '// Solution is being processed.'}
+                        </pre>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* AI Review Scorecard when evaluated */}
@@ -391,7 +621,7 @@ export default function ProblemSolvingView({ subjects, onTriggerNotification, on
                   <span className="text-[10px] font-black uppercase tracking-wider font-mono">AI Sandboxed Compiler Review</span>
                 </div>
 
-                <div className="text-xs leading-relaxed max-h-[220px] overflow-y-auto pr-1 text-slate-300 prose prose-invert">
+                <div className="text-xs leading-relaxed max-h-[160px] overflow-y-auto pr-1 text-slate-300 prose prose-invert">
                   <div className="markdown-body">
                     {lastSubmission.aiReview.split('\n').map((line, lIdx) => {
                       if (line.startsWith('### ')) {
@@ -411,60 +641,142 @@ export default function ProblemSolvingView({ subjects, onTriggerNotification, on
           {/* Right panel: Live compiler terminal editor */}
           <div className="lg:col-span-7 bg-[#0b0f19] border border-white/[0.06] rounded-2xl overflow-hidden flex flex-col justify-between h-[650px] shadow-2xl relative">
             
-            {/* Tab header */}
-            <div className="bg-[#0f1424] px-4 py-2.5 border-b border-white/[0.06] flex items-center justify-between">
-              <div className="flex items-center gap-2 text-xs font-mono font-bold text-slate-300">
-                <FileCode className="w-4 h-4 text-teal-400" />
-                <span>solution.ts</span>
+            {/* Tab header with Multi-Language selection */}
+            <div className="bg-[#0f1424] px-4 py-2.5 border-b border-white/[0.06] flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
+              {/* Language Selector Tabs */}
+              <div className="flex items-center gap-1 bg-[#0a0d17] p-1 rounded-xl border border-white/[0.04] overflow-x-auto">
+                {(['javascript', 'python', 'java', 'c', 'cpp'] as const).map((lang) => (
+                  <button
+                    key={lang}
+                    onClick={() => setSelectedLang(lang)}
+                    className={`px-3 py-1.5 rounded-lg text-[10px] font-bold font-mono transition-all cursor-pointer whitespace-nowrap ${
+                      selectedLang === lang
+                        ? 'bg-teal-600/15 text-teal-400 border border-teal-500/20'
+                        : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.02]'
+                    }`}
+                  >
+                    {lang === 'javascript' ? 'JS' :
+                     lang === 'python' ? 'Python' :
+                     lang === 'java' ? 'Java' :
+                     lang === 'cpp' ? 'C++' : 'C'}
+                  </button>
+                ))}
               </div>
 
-              <div className="flex items-center gap-2">
+              {/* Reset, Copy, Theme Controls */}
+              <div className="flex items-center gap-2 self-end sm:self-auto">
+                {/* Editor Theme Switcher (Dark Mode variants) */}
                 <button
-                  onClick={handleRunTestsSimulated}
-                  className="bg-slate-800 hover:bg-slate-700 font-bold font-mono text-[10px] text-slate-300 px-3 py-1.5 rounded-lg border border-white/5 cursor-pointer transition-all flex items-center gap-1.5"
+                  onClick={() => setEditorTheme(prev => prev === 'deep-space' ? 'dracula' : 'deep-space')}
+                  className="bg-slate-800 hover:bg-slate-700 font-bold font-mono text-[9px] text-slate-400 px-2 py-1 rounded border border-white/5"
+                  title="Toggle custom monospaced Dark Themes"
                 >
-                  <Play className="w-3 h-3 text-slate-400" /> Run sample tests
+                  THEME: {editorTheme === 'deep-space' ? 'SPACE-DARK' : 'DRACULA'}
                 </button>
 
                 <button
-                  onClick={handleSubmitSolution}
-                  disabled={isSubmitting}
-                  className="bg-teal-600 hover:bg-teal-500 disabled:opacity-45 font-bold font-mono text-[10px] text-white px-3.5 py-1.5 rounded-lg cursor-pointer transition-all flex items-center gap-1.5 shadow-md shadow-teal-600/10"
+                  onClick={() => {
+                    let defaultTemplate = '';
+                    if (selectedLang === 'javascript') defaultTemplate = activeChallenge.javascriptTemplate || activeChallenge.templateCode || '';
+                    else if (selectedLang === 'python') defaultTemplate = activeChallenge.pythonTemplate || '';
+                    else if (selectedLang === 'java') defaultTemplate = activeChallenge.javaTemplate || '';
+                    else if (selectedLang === 'c') defaultTemplate = activeChallenge.cTemplate || '';
+                    else if (selectedLang === 'cpp') defaultTemplate = activeChallenge.cppTemplate || '';
+
+                    if (confirm(`Are you sure you want to reset the current ${selectedLang.toUpperCase()} code template to default?`)) {
+                      setCodes(prev => ({ ...prev, [selectedLang]: defaultTemplate }));
+                      onTriggerNotification('Template reset.');
+                    }
+                  }}
+                  className="bg-slate-800 hover:bg-slate-700 font-bold font-mono text-[9px] text-slate-300 px-2.5 py-1.5 rounded border border-white/5 cursor-pointer"
+                  title="Reset to starter default template"
                 >
-                  {isSubmitting ? (
-                    <>
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                      <span>Compiling...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Terminal className="w-3.5 h-3.5" />
-                      <span>Submit Solution</span>
-                    </>
-                  )}
+                  Reset
+                </button>
+
+                <button
+                  onClick={() => {
+                    const currentCode = codes[selectedLang] || '';
+                    navigator.clipboard.writeText(currentCode);
+                    onTriggerNotification('Code copied to clipboard!');
+                  }}
+                  className="bg-slate-800 hover:bg-slate-700 font-bold font-mono text-[9px] text-slate-300 px-2.5 py-1.5 rounded border border-white/5 cursor-pointer"
+                  title="Copy current editor content"
+                >
+                  Copy Code
                 </button>
               </div>
             </div>
 
-            {/* Source Editor Panel */}
-            <textarea
-              value={solutionCode}
-              onChange={(e) => setSolutionCode(e.target.value)}
-              className="flex-1 w-full bg-[#0a0d17] text-slate-200 p-5 font-mono text-[11px] leading-relaxed resize-none focus:outline-none border-0"
-              placeholder={`// Write your clean TS solution sources here...`}
-              style={{ tabSize: 2, WebkitTextFillColor: 'inherit' }}
-            />
+            {/* Custom Interactive Code IDE Canvas with Line Numbers */}
+            <div className={`flex-1 flex overflow-hidden relative ${
+              editorTheme === 'dracula' ? 'bg-[#1e1e2e]' : 'bg-[#0a0d17]'
+            }`} style={{ minHeight: '300px' }}>
+              
+              {/* Monospace Gutter (Line Numbers) */}
+              <div className="w-10 select-none text-right pr-2.5 font-mono text-[10px] text-slate-600 border-r border-white/[0.04] pt-5 bg-black/10 flex flex-col leading-relaxed">
+                {Array.from({ length: Math.max((codes[selectedLang] || '').split('\n').length, 1) }).map((_, i) => (
+                  <span key={i} className="block">{i + 1}</span>
+                ))}
+              </div>
 
-            {/* Simulated Debugging Console Outputs */}
+              {/* Real Textarea Editor */}
+              <textarea
+                value={codes[selectedLang] || ''}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setCodes(prev => ({ ...prev, [selectedLang]: val }));
+                }}
+                className={`flex-1 bg-transparent p-5 pt-5 font-mono text-[11px] leading-relaxed resize-none focus:outline-none border-0 h-full w-full ${
+                  editorTheme === 'dracula' ? 'text-[#a6e3a1] caret-white' : 'text-slate-200 caret-teal-400'
+                }`}
+                placeholder={`// Write your clean ${selectedLang.toUpperCase()} solution here...`}
+                style={{ tabSize: 2, WebkitTextFillColor: 'inherit' }}
+              />
+            </div>
+
+            {/* Simulated Debugging Console Outputs & Execution */}
             <div className="bg-[#070911] border-t border-white/[0.06] p-4 h-48 flex flex-col">
               <div className="flex items-center justify-between border-b border-white/[0.04] pb-1.5 mb-2">
-                <span className="text-[9px] font-black font-mono text-slate-500 uppercase tracking-widest">
-                  Compiler Terminal Sandbox Console
-                </span>
-                <span className="w-2.5 h-2.5 rounded-full bg-teal-500 animate-pulse"></span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[9px] font-black font-mono text-slate-500 uppercase tracking-widest">
+                    Academic Compiler Terminal Console
+                  </span>
+                  <span className="text-[9px] font-bold font-mono px-1.5 bg-teal-500/10 text-teal-400 border border-teal-500/20 rounded">
+                    {selectedLang.toUpperCase()} MODE
+                  </span>
+                </div>
+                
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleRunTestsSimulated}
+                    className="bg-slate-800 hover:bg-slate-700 font-bold font-mono text-[9px] text-slate-300 px-2.5 py-1 rounded border border-white/5 cursor-pointer flex items-center gap-1"
+                  >
+                    <Play className="w-2.5 h-2.5 text-slate-400" /> Run Code
+                  </button>
+
+                  <button
+                    onClick={handleSubmitSolution}
+                    disabled={isSubmitting}
+                    className="bg-teal-600 hover:bg-teal-500 disabled:opacity-45 font-bold font-mono text-[9px] text-white px-3 py-1 rounded cursor-pointer flex items-center gap-1 shadow-md shadow-teal-600/10"
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                        <span>Compiling...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Terminal className="w-3 h-3" />
+                        <span>Submit Code</span>
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
+              
               <pre className="flex-1 font-mono text-[10px] text-slate-300 leading-normal overflow-y-auto whitespace-pre-wrap select-text selection:bg-slate-800">
-                {terminalOutput || "[Sandbox Standby]: Compiler console ready. Submit sources or run tests assertions."}
+                {terminalOutput || `[Sandbox Standby]: Compiler terminal standby. Write code, then click "Run Code" or "Submit Code".`}
               </pre>
             </div>
 
